@@ -79,7 +79,8 @@ function get_isracard_data(f_handler, fid, categoriesTable){
   var data = sheet.getRange(1,1,lastRow,lastCol).getValues();
   var out_data = [];
   var nCard = '';
-  var billingMonth = new Date(0); 
+  var billingDate = new Date(); 
+  var isBillingMonthColumnExists = false;
   var inputDate = new Date();
   var abroadCharges = 0; 
   var fname = SpreadsheetApp.openById(fid).getName()
@@ -87,11 +88,20 @@ function get_isracard_data(f_handler, fid, categoriesTable){
   for (var r=0; r < lastRow; r++){
     var row = data[r];
     
-    if (row[1] == 'מועד חיוב'){
-      nCard = row[0].split(' - ')[row[0].split(' - ').length -1];
-      billingMonth.setFullYear(['20', row[2].split('/')[2]].join(''));
-      billingMonth.setMonth(row[2].split('/')[1]-1);
-      //billingMonth.setMonth(billingMonth.getMonth()-1); // because JS Date months are zero-based
+    // determine if card number appears and is valid
+    const potentialCardNumber = row[0].split(' - ')[row[0].split(' - ').length -1];
+    if(Number(potentialCardNumber)){
+      nCard = potentialCardNumber
+    }
+
+    if (row.join(" ").includes('פירוט עסקאות')){
+      billingYear = row.join(" ").split(" ").filter(r=>Number(r))[0];
+      billingDate.setFullYear(billingYear);
+    }
+    else if (row.join(" ").includes('לחיוב ב')){
+      billingMonthAndDay = row.join(" ").split("-").filter(r=>Number(r))[0].split(".");
+      billingDate.setMonth(billingMonthAndDay[1]-1); // because JS Date months are zero-based
+      billingDate.setDate(billingMonthAndDay[0]);
       continue;
     }
     else if (row[0] == 'עסקאות בארץ'){
@@ -102,27 +112,39 @@ function get_isracard_data(f_handler, fid, categoriesTable){
       abroadCharges = 1;
       continue;
     }
-    else if (row[0].split('/').length == 3){
+    else if(row[1] == "תאריך חיוב בבנק"){
+      isBillingMonthColumnExists = true;
+    }
+    else if (row[0].split('.').length == 3){
       var formattedRow = new transactionDetailsTemplate();
       formattedRow.inputDate = inputDate;
       formattedRow.type = 'Isracard';
       formattedRow.nCard = nCard;
-      formattedRow.billingMonth = billingMonth;
+      formattedRow.billingMonth = billingDate;
       formattedRow.fid = fid;
       formattedRow.fname = fname;
       
-      formattedRow.transactionDate = new Date(row[0].split('/')[2], row[0].split('/')[1]-1, row[0].split('/')[0]); //month is zero-based
+      tDateSplit = row[0].split('.');
+      formattedRow.transactionDate = new Date("20" + tDateSplit[2], tDateSplit[1]-1, tDateSplit[0]); //month is zero-based
       
-      if (abroadCharges == 1){
+      if(isBillingMonthColumnExists == true){
+        formattedRow.name = row[2];
+        formattedRow.amount = row[3];
+        formattedRow.currency = charToCurrencyCode(row[6]);
+      }
+      else if (abroadCharges == 1){
         formattedRow.name = row[2];
         formattedRow.amount = row[5];
         formattedRow.currency = charToCurrencyCode(row[6]);
       }
-      else{
+      else if (abroadCharges == 0){ 
         formattedRow.name = row[1];
         formattedRow.amount = row[4];
         formattedRow.currency = charToCurrencyCode(row[5]);
         }
+      else {
+        Logger.log("Error parsing Isracard");
+      }
       
       if(formattedRow.name == 'TOTAL FOR DATE'){ continue;}
       
